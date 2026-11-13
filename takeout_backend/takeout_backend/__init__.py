@@ -1,0 +1,23 @@
+from flask import Flask
+from .extensions import db, migrate
+from .config import config_by_name
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
+
+
+def create_app(config_name):
+    config = config_by_name.get(config_name)
+    if not config:
+        raise ValueError("Invalid config name")
+    app = Flask(__name__)
+    app.config.from_object(config)
+    print("CONFIG:", config_name, app.config.get("SQLALCHEMY_DATABASE_URI"))
+    db.init_app(app)
+    migrate.init_app(app, db)
+    
+    from .routes import orders_bp
+    
+    app.register_blueprint(orders_bp, url_prefix="/orders")
+    
+    return app
