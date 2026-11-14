@@ -82,16 +82,6 @@
   - `flask routes` shows:
     - `orders.health_check  GET  /orders/health`
 
-## Next up
-- Flesh out the `orders` domain:
-  - Decide basic data model (what an order looks like).
-  - Prepare to add SQLAlchemy models and migrations.
-- Keep using non-5000 ports for local runs:
-  - Example: `FLASK_APP=wsgi.py flask run --port 5001`
-- Later milestones (not done yet, just planned):
-  - Define models and run initial migrations
-  - Add JWT-based auth using `JWT_SECRET_KEY`
-  - Add more endpoints under `/orders` and future domains (`restaurants`, `users`, etc.)
 
 ## Notes / conventions
 - Port 5000 is off-limits; use 5001+ for local dev.
