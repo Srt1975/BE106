@@ -1,8 +1,9 @@
 # HANDOFF
 
 ## Project
+- Repo root: BE106 
 - Name: takeout_backend
-- Path: /Volumes/dev_n_game/school/BE105FINAL/takeout_backend
+- Path: /Volumes/dev_n_game/school/BE106/takeout_backend
 
 ## Environment
 - Python: 3.14.10
@@ -19,14 +20,16 @@
 - Pinned in: requirements.txt
 
 ## Current structure
-- Project root: BE105FINAL/takeout_backend/
+- Repo root:
+  -  `.gitignore` (includes `.env`)
+- Project root: BE106/takeout_backend/
   - `requirements.txt`
   - `wsgi.py` (calls `create_app("production")` or another config name as needed)
   - `.env` (untracked, real values)
   - `.env.example` (template / placeholders)
-  - `.gitignore` (includes `.env`)
   - `HANDOFF.md` (this file)
-- Package: BE105FINAL/takeout_backend/takeout_backend/
+  - `README.md` now documents setup, env vars and migrations info
+- Package: BE106/takeout_backend/takeout_backend/
   - `__init__.py`
     - Defines `create_app(config_name)`
     - Calls `load_dotenv()` at import time
