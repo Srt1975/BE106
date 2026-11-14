@@ -16,6 +16,7 @@ def create_app(config_name):
     db.init_app(app)
     migrate.init_app(app, db)
     
+    from .models import User
     from .routes import orders_bp
     
     app.register_blueprint(orders_bp, url_prefix="/orders")
