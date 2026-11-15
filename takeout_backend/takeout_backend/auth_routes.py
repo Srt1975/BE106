@@ -73,16 +73,16 @@ def login():
         return jsonify(error_body), 401
 
     # Get UTC time for token creation
-    from datetime import datetime, timedelta
-    current_time = datetime.utcnow()
-    exp = current_time + timedelta(seconds=current_app.config["JWT_LIFETIME_SECONDS"])
-    sub = str(user.id)
-    role = "user"
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(seconds=current_app.config["JWT_LIFETIME_SECONDS"])
+
     payload = {
-        "sub": sub,
-        "role": role,
-        "exp": exp.timestamp()
-    }
+    "sub": str(user.id),
+    "role": "user",
+    "exp": int(exp.timestamp()),
+}
     token = jwt.encode(payload, current_app.config["JWT_SECRET_KEY"], algorithm="HS256")
 
     response_body = {
