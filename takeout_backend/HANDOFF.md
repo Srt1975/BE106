@@ -38,7 +38,7 @@
   - `password_hash` (String(128), not null)
   - `created_at` (DateTime, default `db.func.current_timestamp()`)
 
-## Blueprints / Routes
+## Auth blueprints / Routes
 - `orders_bp` (`routes.py`)
   - Prefix: `/orders`
   - `GET /orders/health` → health check
@@ -81,13 +81,25 @@
         ```
       - Never returns password or hash
 
+## Password hashing & verification audit
+- Dev DB: `instance/temp.db`
+- Sample user: `test@example.com`
+- `password_hash` starts with `scrypt:32768:8:1$...` (Werkzeug hash)
+- Verification (via `flask shell`):
+  - `check_password_hash(u.password_hash, "Secret123!")` → `True`
+  - `check_password_hash(u.password_hash, "wrong-value")` → `False`
+- Only one user in DB, created through the hashed registration flow; no plaintext passwords ever stored.
+
 ## Migrations
 - Flask-Migrate initialized at project root.
 - Latest migration: `8662ad333278_add_users_table.py` (creates `users` table as above).
 
 ## Next step
-- Commit current work on a feature branch:
-  - `git status` → verify only auth + related files changed
-  - Commit message suggestion:
-    - `feat(auth): add registration endpoint with validation and duplicate handling`
-- Upcoming lessons: login endpoint, JWT issuance, protected routes (not implemented yet).
+- Commit current work on the auth feature branch:
+  - `git status` → confirm only intended files changed (e.g. `HANDOFF.md`)
+  - `git add HANDOFF.md`
+  - `git commit -m "chore(auth): document password hashing audit"`
+  - `git push`
+- Upcoming lessons:
+  - Implement login endpoint using `check_password_hash` for credential verification
+  - Add JWT issuance and protected routes later on
