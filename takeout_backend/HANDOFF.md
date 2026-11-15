@@ -1,36 +1,39 @@
 # HANDOFF
-- try to keep around 100 lines use more only if context is needed.
+- Try to keep around 100 lines; use more only if context is needed.
 
 ## Project
 - Repo: `BE106/takeout_backend`
 - Python: 3.14.10  
 - Venv: `./venv` → `source venv/bin/activate`
+- Default dev port: `5001`
 
 ## Dependencies
 - Flask, Flask-SQLAlchemy, Flask-Migrate  
-- python-dotenv, PyJWT  
+- python-dotenv, PyJWT, Werkzeug  
 - Pinned in `requirements.txt`
 
 ## Structure
 - Root: `.gitignore`, `requirements.txt`, `wsgi.py`, `.env`, `.env.example`, `HANDOFF.md`, `README.md`
 - Package: `takeout_backend/`
-  - `__init__.py`
-  - `config.py`
-  - `extensions.py`
-  - `models.py`
-  - `routes.py` (orders)
-  - `auth_routes.py` (auth)
+  - `__init__.py` – app factory, env loading, blueprint registration
+  - `config.py` – config classes, `config_by_name`
+  - `extensions.py` – db, migrate, etc.
+  - `models.py` – `User`
+  - `routes.py` – `orders_bp` + protected health check
+  - `auth_routes.py` – `auth_bp` (register + login)
+  - `auth_utils.py` – JWT auth decorator
 
 ## App config
-- `create_app(config_name)` with `config_by_name`
-- `.env` loaded via `load_dotenv()` in `__init__.py`
+- `create_app(config_name)` uses `config_by_name` and registers:
+  - `auth_bp` at `/auth`
+  - `orders_bp` at `/orders`
+- `.env` loaded via `load_dotenv()` in `__init__.py`.
 - DB:
-  - `DATABASE_URL` from env if set
-  - Else fallback: `sqlite:///temp.db`
+  - `DATABASE_URL` from env if set, else `sqlite:///temp.db`
   - Active dev DB: `instance/temp.db` (confirmed via `db.engine.url`)
 - JWT:
   - `JWT_SECRET` in env → `app.config["JWT_SECRET_KEY"]`
-  - `JWT_LIFETIME_SECONDS` in env (default `3600`) → `app.config["JWT_LIFETIME_SECONDS"]`
+  - `JWT_LIFETIME_SECONDS` in env (default `3600`)
 
 ## Models
 - `User` (`models.py`)
@@ -40,90 +43,24 @@
   - `password_hash` (String(128), not null)
   - `created_at` (DateTime, default `db.func.current_timestamp()`)
 
-## Auth blueprints / Routes
-- `orders_bp` (`routes.py`)
-  - Prefix: `/orders`
-  - `GET /orders/health` → health check
+## Auth blueprints / routes
 - `auth_bp` (`auth_routes.py`)
-  - Prefix: `/auth`
   - `POST /auth/register`
-    - Request JSON:
-      - `email` (string)
-      - `password` (string)
-    - Validation:
-      - Missing/empty fields → `400` with:
-        ```json
-        {
-          "code": "VALIDATION_ERROR",
-          "message": "There were validation errors.",
-          "fields": {
-            "email": "...optional...",
-            "password": "...optional..."
-          }
-        }
-        ```
-    - Duplicate email:
-      - `409` with:
-        ```json
-        {
-          "code": "EMAIL_TAKEN",
-          "message": "Email is already registered."
-        }
-        ```
-    - Success:
-      - Hashes password with `generate_password_hash(password)`
-      - Stores in `User.password_hash`
-      - Returns `201` with:
-        ```json
-        {
-          "id": <int>,
-          "email": "<string>",
-          "created_at": "<ISO timestamp or null>"
-        }
-        ```
-      - Never returns password or hash
+    - Body: `email`, `password` (strings)
+    - 400 on missing/empty fields:
+      - `code: "VALIDATION_ERROR"`
+    - 409 on duplicate email:
+      - `code: "EMAIL_TAKEN"`
+    - 201 on success:
+      - `id`, `email`, `created_at` (no password/hash in response)
   - `POST /auth/login`
-    - Request JSON:
-      - `email` (string)
-      - `password` (string)
-    - Validation:
-      - Missing/empty fields → `400` with:
-        ```json
-        {
-          "code": "VALIDATION_ERROR",
-          "message": "There were validation errors.",
-          "fields": {
-            "email": "...optional...",
-            "password": "...optional..."
-          }
-        }
-        ```
-    - Credential check:
-      - Looks up `User` by `email`
-      - Uses `check_password_hash(user.password_hash, password)` for verification
-    - Failure (unknown email or wrong password):
-      - Always returns the same `401`:
-        ```json
-        {
-          "code": "INVALID_CREDENTIALS",
-          "message": "Invalid email or password."
-        }
-        ```
-    - Success:
-      - Builds JWT payload:
-        ```json
-        {
-          "sub": "<user.id as string>",
-          "role": "user",
-          "exp": <unix timestamp, UTC now + JWT_LIFETIME_SECONDS>
-        }
-        ```
-      - Uses:
-        - Secret: `current_app.config["JWT_SECRET_KEY"]`
-        - Lifetime: `current_app.config["JWT_LIFETIME_SECONDS"]`
-        - Algorithm: `HS256`
-      - Encodes with PyJWT’s `jwt.encode(...)`
-      - Returns `200` with:
+    - Body: `email`, `password`
+    - 400 on missing/empty fields (`VALIDATION_ERROR`)
+    - Looks up `User` by `email`, checks `check_password_hash(...)`
+    - 401 on bad credentials:
+      - `code: "INVALID_CREDENTIALS"`
+    - 200 on success:
+      - Returns user info + JWT:
         ```json
         {
           "id": <int>,
@@ -132,35 +69,77 @@
           "token": "<JWT string>"
         }
         ```
+      - JWT payload:
+        ```json
+        {
+          "sub": "<user.id as string>",
+          "role": "user",
+          "exp": <unix timestamp, now + JWT_LIFETIME_SECONDS>
+        }
+        ```
+      - Encoded with PyJWT `jwt.encode(...)`:
+        - Secret: `current_app.config["JWT_SECRET_KEY"]`
+        - Algorithm: `HS256`
 
-## Password hashing & verification audit
+## Orders blueprint / routes
+- `orders_bp` (`routes.py`)
+  - Prefix: `/orders`
+  - `GET /orders/health`
+    - Protected by `@require_auth`
+    - 200 on valid token:
+      ```json
+      {"status": "healthy"}
+      ```
+
+## Auth utilities
+- `auth_utils.py`
+  - `@require_auth` decorator:
+    - Reads `Authorization` header, expects `Bearer <token>`.
+    - On missing/invalid header:
+      - 401 with:
+        ```json
+        {
+          "code": "UNAUTHORIZED",
+          "message": "Missing or invalid Authorization header."
+        }
+        ```
+    - Decodes JWT with `current_app.config["JWT_SECRET_KEY"]`, `HS256`.
+    - Extracts `sub`, converts to `int`, sets `g.current_user_id`.
+    - On invalid/expired token or bad payload:
+      - 401 with:
+        ```json
+        {
+          "code": "UNAUTHORIZED",
+          "message": "Invalid or expired token."
+        }
+        ```
+
+## Password hashing audit
 - Dev DB: `instance/temp.db`
 - Sample user: `test@example.com`
-- `password_hash` starts with `scrypt:32768:8:1$...` (Werkzeug hash)
-- Verification (via `flask shell`):
-  - `check_password_hash(u.password_hash, "Secret123!")` → `True`
-  - `check_password_hash(u.password_hash, "wrong-value")` → `False`
-- Only one user in DB, created through the hashed registration flow; no plaintext passwords ever stored.
+- `password_hash` starts with `scrypt:32768:8:1$...` (Werkzeug)
+- Verified via `flask shell` using `check_password_hash`.
 
-## JWT issuance audit
-- Successful login (`test@example.com` / `Secret123!`) via `curl`:
-  - Returns `200 OK` with `token` in JSON body.
-- Local decode with `jwt.decode(token, options={"verify_signature": False})` shows:
-  - `sub` is a string `"1"`
-  - `role` is `"user"`
-  - `exp` is a numeric Unix timestamp in the future.
-- Wrong email and wrong password both return identical `401 INVALID_CREDENTIALS` responses.
+## Verified curl behavior (dev, port 5001)
+- No token:
+  ```bash
+  curl -i http://localhost:5001/orders/health
+  ```
+  → `401 UNAUTHORIZED`, body:
+  `{"code":"UNAUTHORIZED","message":"Missing or invalid Authorization header."}`
 
-## Migrations
-- Flask-Migrate initialized at project root.
-- Latest migration: `8662ad333278_add_users_table.py` (creates `users` table as above).
+- Tampered token:
+  ```bash
+  curl -i -H "Authorization: Bearer <TAMPERED_TOKEN>" \
+    http://localhost:5001/orders/health
+  ```
+  → `401 UNAUTHORIZED`, body:
+  `{"code":"UNAUTHORIZED","message":"Invalid or expired token."}`
 
-## Next step
-- Verify branch is clean and push:
-  - `git status`
-  - `git add takeout_backend/auth_routes.py takeout_backend/config.py HANDOFF.md`
-  - `git commit -m "feat(auth): implement login with JWT issuance"`
-  - `git push`
-- Upcoming lessons:
-  - Use this JWT to protect routes
-  - Enforce access based on the token’s identity/role
+- Valid token:
+  ```bash
+  curl -i -H "Authorization: Bearer <REAL_TOKEN>" \
+    http://localhost:5001/orders/health
+  ```
+  → `200 OK`, body:
+  `{"status":"healthy"}`
