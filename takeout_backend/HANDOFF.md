@@ -21,12 +21,14 @@
   - `models.py` – `User`
   - `routes.py` – `orders_bp` + protected health check
   - `auth_routes.py` – `auth_bp` (register + login)
+  - `user_routes.py` – `user_bp` (`/users/me` GET + PATCH)
   - `auth_utils.py` – JWT auth decorator
 
 ## App config
 - `create_app(config_name)` uses `config_by_name` and registers:
   - `auth_bp` at `/auth`
   - `orders_bp` at `/orders`
+  - `user_bp` at `/users`
 - `.env` loaded via `load_dotenv()` in `__init__.py`.
 - DB:
   - `DATABASE_URL` from env if set, else `sqlite:///temp.db`
@@ -46,100 +48,47 @@
 ## Auth blueprints / routes
 - `auth_bp` (`auth_routes.py`)
   - `POST /auth/register`
-    - Body: `email`, `password` (strings)
-    - 400 on missing/empty fields:
-      - `code: "VALIDATION_ERROR"`
-    - 409 on duplicate email:
-      - `code: "EMAIL_TAKEN"`
-    - 201 on success:
-      - `id`, `email`, `created_at` (no password/hash in response)
+    - Body: `email`, `password`
+    - 400: `code: "VALIDATION_ERROR"`
+    - 409: `code: "EMAIL_TAKEN"`
+    - 201: `id`, `email`, `created_at`
   - `POST /auth/login`
     - Body: `email`, `password`
-    - 400 on missing/empty fields (`VALIDATION_ERROR`)
-    - Looks up `User` by `email`, checks `check_password_hash(...)`
-    - 401 on bad credentials:
-      - `code: "INVALID_CREDENTIALS"`
-    - 200 on success:
-      - Returns user info + JWT:
-        ```json
-        {
-          "id": <int>,
-          "email": "<string>",
-          "created_at": "<ISO timestamp or null>",
-          "token": "<JWT string>"
-        }
-        ```
-      - JWT payload:
-        ```json
-        {
-          "sub": "<user.id as string>",
-          "role": "user",
-          "exp": <unix timestamp, now + JWT_LIFETIME_SECONDS>
-        }
-        ```
-      - Encoded with PyJWT `jwt.encode(...)`:
-        - Secret: `current_app.config["JWT_SECRET_KEY"]`
-        - Algorithm: `HS256`
+    - 400: `VALIDATION_ERROR`
+    - 401: `INVALID_CREDENTIALS`
+    - 200: `id`, `email`, `created_at`, `token`
+      - JWT payload: `{"sub": "<user.id as string>", "role": "user", "exp": <unix ts>}`
 
 ## Orders blueprint / routes
 - `orders_bp` (`routes.py`)
   - Prefix: `/orders`
   - `GET /orders/health`
     - Protected by `@require_auth`
-    - 200 on valid token:
-      ```json
-      {"status": "healthy"}
-      ```
+    - 200: `{"status": "healthy"}`
+
+## User profile routes
+- `user_bp` (`user_routes.py`)
+  - Prefix: `/users`
+  - `GET /users/me`
+    - `@require_auth`, uses `g.current_user_id`
+    - Returns `{id, email, created_at}` for the caller only
+  - `PATCH /users/me`
+    - `@require_auth`, uses `g.current_user_id`
+    - Allowlist: updates `email` only
+    - Ignores `password_hash` or other unexpected fields
 
 ## Auth utilities
 - `auth_utils.py`
   - `@require_auth` decorator:
-    - Reads `Authorization` header, expects `Bearer <token>`.
-    - On missing/invalid header:
-      - 401 with:
-        ```json
-        {
-          "code": "UNAUTHORIZED",
-          "message": "Missing or invalid Authorization header."
-        }
-        ```
-    - Decodes JWT with `current_app.config["JWT_SECRET_KEY"]`, `HS256`.
-    - Extracts `sub`, converts to `int`, sets `g.current_user_id`.
-    - On invalid/expired token or bad payload:
-      - 401 with:
-        ```json
-        {
-          "code": "UNAUTHORIZED",
-          "message": "Invalid or expired token."
-        }
-        ```
-
-## Password hashing audit
-- Dev DB: `instance/temp.db`
-- Sample user: `test@example.com`
-- `password_hash` starts with `scrypt:32768:8:1$...` (Werkzeug)
-- Verified via `flask shell` using `check_password_hash`.
+    - Reads `Authorization: Bearer <token>`
+    - Missing/invalid → 401:
+      - `{"code":"UNAUTHORIZED","message":"Missing or invalid Authorization header."}`
+    - Decodes JWT with `JWT_SECRET_KEY`, HS256, requires `exp`
+    - Sets `g.current_user_id = int(sub)`
+    - Invalid/expired → 401:
+      - `{"code":"UNAUTHORIZED","message":"Invalid or expired token."}`
 
 ## Verified curl behavior (dev, port 5001)
-- No token:
-  ```bash
-  curl -i http://localhost:5001/orders/health
-  ```
-  → `401 UNAUTHORIZED`, body:
-  `{"code":"UNAUTHORIZED","message":"Missing or invalid Authorization header."}`
-
-- Tampered token:
-  ```bash
-  curl -i -H "Authorization: Bearer <TAMPERED_TOKEN>" \
-    http://localhost:5001/orders/health
-  ```
-  → `401 UNAUTHORIZED`, body:
-  `{"code":"UNAUTHORIZED","message":"Invalid or expired token."}`
-
-- Valid token:
-  ```bash
-  curl -i -H "Authorization: Bearer <REAL_TOKEN>" \
-    http://localhost:5001/orders/health
-  ```
-  → `200 OK`, body:
-  `{"status":"healthy"}`
+- Both `GET /users/me` and `PATCH /users/me`:
+  - Work only with a valid token
+  - Always operate on the caller’s own `User` (tested with two accounts)
