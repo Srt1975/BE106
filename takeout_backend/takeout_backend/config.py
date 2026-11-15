@@ -6,6 +6,7 @@ class BaseConfig:
     DATABASE_URL = os.environ.get("DATABASE_URL")
     SQLALCHEMY_DATABASE_URI = DATABASE_URL if DATABASE_URL else "sqlite:///temp.db"
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET", "default")
+    JWT_LIFETIME_SECONDS = int(os.environ.get("JWT_LIFETIME_SECONDS", 3600))
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
