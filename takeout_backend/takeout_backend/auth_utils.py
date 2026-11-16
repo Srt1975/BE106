@@ -20,9 +20,11 @@ def require_auth(f):
         try:
             payload = jwt.decode(token, current_app.config["JWT_SECRET_KEY"], algorithms=["HS256"], options={"require": ["exp"], "verify_exp": True},)
             sub = payload.get("sub")
+            role = payload.get("role")
             if not sub:
                 return jsonify({"code": "UNAUTHORIZED", "message": "Invalid token payload."}), 401
             g.current_user_id = int(sub)
+            g.current_user_role = role
         except (jwt.ExpiredSignatureError):
             return jsonify({"code": "UNAUTHORIZED", "message": "Expired token."}), 401
         except (jwt.InvalidTokenError):

@@ -80,7 +80,7 @@ def login():
 
     payload = {
     "sub": str(user.id),
-    "role": "user",
+    "role": user.role,
     "exp": int(exp.timestamp()),
 }
     token = jwt.encode(payload, current_app.config["JWT_SECRET_KEY"], algorithm="HS256")
