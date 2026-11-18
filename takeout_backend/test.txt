@@ -1,0 +1,49 @@
+Route | Scenario | Status | Response body (short) | Auth vs AuthZ?
+------|----------|--------|-----------------------|----------------
+GET /orders/health | no token |
+    "code": "UNAUTHORIZED",
+    "message": "Missing or invalid Authorization header."| 401 auth
+GET /orders/health | bad token |{
+    "code": "UNAUTHORIZED",
+    "message": "Invalid token."
+}| 401 auth
+GET /orders/health | valid non-admin user (if relevant) |{
+    "status": "healthy"
+} | 200 ok
+GET /orders/admin/health | no token | {
+    "code": "UNAUTHORIZED",
+    "message": "Missing or invalid Authorization header."
+} | 401 auth
+GET /orders/admin/health | bad token | {
+    "code": "UNAUTHORIZED",
+    "message": "Invalid token."
+} | 401 auth
+GET /orders/admin/health | valid non-admin user | {
+    "error": "Unauthorized"
+} | 403 authZ
+GET /users/me | no token | {
+    "code": "UNAUTHORIZED",
+    "message": "Missing or invalid Authorization header."
+} | 401 auth
+GET /users/me | bad token | {
+    "code": "UNAUTHORIZED",
+    "message": "Invalid token."
+} | 401 auth
+GET /users/me | valid user | {
+    "created_at": "2026-11-15T23:33:40",
+    "email": "user.b+updated@example.com",
+    "id": 2
+} | 200 ok
+PATCH /users/me | no token | {
+    "code": "UNAUTHORIZED",
+    "message": "Missing or invalid Authorization header."
+} | 401 auth
+PATCH /users/me | bad token | {
+    "code": "UNAUTHORIZED",
+    "message": "Invalid token."
+} | 401 auth
+PATCH /users/me | valid user | {
+    "created_at": "2026-11-15T23:33:40",
+    "email": "user.b+updated@patched.com",
+    "id": 2
+} | 200 ok
