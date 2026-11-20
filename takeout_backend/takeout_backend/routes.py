@@ -74,5 +74,40 @@ def get_delivery_order(order_id):
     }
     return {'data': response}, 200
 
+@orders_bp.patch('/orders/<int:order_id>')
+@require_auth
+def update_delivery_order(order_id):
+    order = DeliveryOrder.query.get(order_id)
+    if not order:
+        return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
+    data = request.get_json(silent=True)
+    if data is None:
+        return {"code": "INVALID_JSON", "message": "Invalid JSON body"}, 400
+    restaurant_name = data.get('restaurant_name')
+    total_price = data.get('total_price')
+    reference_number = data.get('reference_number')
+    if restaurant_name:
+        order.restaurant_name = restaurant_name
+    if total_price:
+        order.total_price = total_price
+    if reference_number:
+        order.reference_number = reference_number
+    db.session.commit()
+    response = {
+        'id': order.id,
+        'restaurant_name': order.restaurant_name,
+        'total_price': order.total_price,
+        'reference_number': order.reference_number
+    }
+    return {'message': 'Delivery order updated successfully', 'data': response}, 200
 
+@orders_bp.delete('/orders/<int:order_id>')
+@require_auth
+def delete_delivery_order(order_id):
+    order = DeliveryOrder.query.get(order_id)
+    if not order:
+        return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
+    db.session.delete(order)
+    db.session.commit()
+    return {'message': 'Delivery order deleted successfully'}, 200
 

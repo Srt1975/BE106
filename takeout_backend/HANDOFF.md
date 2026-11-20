@@ -1,114 +1,165 @@
-## Project
-- Max HANDOFF.md length @ about 100 lines
-- Repo: `BE106/takeout_backend`
-- Python: 3.14.10  
-- Venv: `./venv` → `source venv/bin/activate`
-- Default dev port: `5001`
+# Takeout Backend – HANDOFF
 
-## Dependencies
-- Flask, Flask-SQLAlchemy, Flask-Migrate  
-- python-dotenv, PyJWT, Werkzeug  
-- Pinned in `requirements.txt`
+Python 3.14.10 • Flask API for delivery orders with JWT auth.
+Repo: BE106/takeout_backend • Dev: http://localhost:5001
+
+---
+
+## Setup
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+flask db upgrade          # apply migrations
+flask --app wsgi:app run --port 5001
+
+Env via .env (copy from .env.example):
+
+- FLASK_ENV=development
+- DATABASE_URL (optional, defaults to sqlite:///example.db)
+- JWT_SECRET (required)
+- JWT_LIFETIME_SECONDS (default 3600)
+
+DB default: sqlite:///example.db → instance/example.db.
+
+---
 
 ## Structure
-- Root: `.gitignore`, `requirements.txt`, `wsgi.py`, `.env`, `.env.example`, `HANDOFF.md`, `README.md`
-- Package: `takeout_backend/`
-  - `__init__.py` – app factory, env loading, blueprint registration
-  - `config.py` – config classes, `config_by_name`
-  - `extensions.py` – `db`, `migrate`, etc.
-  - `models.py` – `User`, `DeliveryOrder` + relationships
-  - `routes.py` – `orders_bp` (health, admin-health, delivery order create + list)
-  - `auth_routes.py` – `auth_bp` (register + login)
-  - `user_routes.py` – `user_bp` (`/users/me` GET + PATCH)
-  - `auth_utils.py` – JWT auth decorator
 
-## App config
-- `create_app(config_name)` uses `config_by_name` and registers:
-  - `auth_bp` at `/auth`
-  - `orders_bp` at `/orders`
-  - `user_bp` at `/users`
-- `.env` loaded via `load_dotenv()` in `__init__.py`.
-- DB:
-  - `DATABASE_URL` from env if set, else `sqlite:///example.db`
-  - Active dev DB: `instance/example.db` (via `flask db upgrade` + sqlite3)
-- JWT:
-  - `JWT_SECRET` in env → `app.config["JWT_SECRET_KEY"]`
-  - `JWT_LIFETIME_SECONDS` in env (default `3600`)
+- wsgi.py – entrypoint, calls create_app
+- takeout_backend/__init__.py – app factory, env load, blueprints
+- takeout_backend/config.py – config classes, config_by_name
+- takeout_backend/extensions.py – db, migrate
+- takeout_backend/models.py – User, DeliveryOrder
+- takeout_backend/routes.py – orders_bp (orders + health)
+- takeout_backend/auth_routes.py – auth_bp (register/login)
+- takeout_backend/user_routes.py – user_bp (/users/me)
+- takeout_backend/auth_utils.py – @require_auth JWT decorator
 
-## Models
-- `User` (`models.py`)
-  - `id`, `email` (unique), `password_hash`, `created_at`, `role` (default `"user"`)
-  - `delivery_orders` – one-to-many to `DeliveryOrder`
-- `DeliveryOrder` (`models.py`)
-  - `id` (PK)
-  - `user_id` (FK → `users.id`, not null) — owner of the order
-  - `restaurant_name` (String(120), not null)
-  - `total_price` (Float, not null)
-  - `special_instructions` (Text, nullable)
-  - `reference_number` (String(50), unique, not null)
-  - `user` – many-to-one back to `User`
-  - `user_id` is always set from `g.current_user_id` (JWT), never trusted from request body
+create_app(config_name):
 
-## Auth routes
-- `auth_bp` (`auth_routes.py`)
-  - `POST /auth/register`
-    - Body: `email`, `password`
-    - 400: `{"code": "VALIDATION_ERROR"}`
-    - 409: `{"code": "EMAIL_TAKEN"}`
-    - 201: `id`, `email`, `created_at`
-  - `POST /auth/login`
-    - Body: `email`, `password`
-    - 400: `{"code": "VALIDATION_ERROR"}`
-    - 401: `{"code": "INVALID_CREDENTIALS"}`
-    - 200: `id`, `email`, `created_at`, `token`
-      - JWT payload: `{"sub": "<user.id as string>", "role": user.role, "exp": <unix ts>}`
+- loads env with load_dotenv()
+- uses config_by_name[config_name]
+- registers /auth, /orders, /users blueprints.
 
-## Orders routes
-- `orders_bp` (`routes.py`)
-  - Prefix: `/orders`
-  - `GET /orders/health`
-    - `@require_auth`
-    - 200: `{"status": "healthy"}`
-  - `GET /orders/admin/health`
-    - `@require_auth` (sets `g.current_user_id`, `g.current_user_role`)
-    - Requires `g.current_user_role == "admin"`
-    - 200 (admin): `{"status": "admin healthy"}`
-    - 403 (non-admin): `{"error": "Unauthorized"}`
-    - 401 (no/invalid token): from `@require_auth` (`{"code":"UNAUTHORIZED", ...}`)
-  - `POST /orders/orders`
-    - `@require_auth`
-    - JSON: `restaurant_name`, `total_price`, `reference_number` (required)
-    - 400 invalid JSON: `{"code": "INVALID_JSON"}`
-    - 400 missing fields: `{"code": "VALIDATION_ERROR"}`
-    - Creates `DeliveryOrder` with `user_id = g.current_user_id`
-    - 201: `{"message": "...", "data": {id, user_id, restaurant_name, total_price, reference_number}}`
-  - `GET /orders/orders`
-    - `@require_auth`
-    - Returns only orders where `user_id == g.current_user_id`
-    - 200: `{"data": [{id, restaurant_name, total_price, reference_number}, ...]}`
+---
 
-## User profile routes
-- `user_bp` (`user_routes.py`)
-  - Prefix: `/users`
-  - `GET /users/me`
-    - `@require_auth`, uses `g.current_user_id`
-    - Returns `{id, email, created_at}` for the caller only
-  - `PATCH /users/me`
-    - `@require_auth`, uses `g.current_user_id`
-    - Allowlist: updates `email` only
-    - Ignores `password_hash`, `role`, or other unexpected fields
+## Data Model
 
-## Auth utilities
-- `auth_utils.py`
-  - `@require_auth`:
-    - Reads `Authorization: Bearer <token>`
-    - Verifies JWT
-    - On success sets `g.current_user_id`, `g.current_user_role`
-    - On failure returns 401 with `{"code": "UNAUTHORIZED", ...}`
+User
 
-## Current behavior notes
+- id, email (unique), password_hash, role ("user" default), created_at
+- relationship: delivery_orders – one-to-many to DeliveryOrder
 
-GET /orders/orders/<id>:
-Existing ID → 200 with order data (even if owned by another user).
-Missing ID → 404 with JSON {"code": "NOT_FOUND", "message": "Delivery order not found"}.
-Ownership enforcement for read-by-ID is not yet implemented; this lesson only distinguishes “missing record” vs “existing record”
+DeliveryOrder
+
+- id (PK)
+- user_id (FK → users.id, not null; owner)
+- restaurant_name (required)
+- total_price (float, required)
+- special_instructions (nullable)
+- reference_number (unique, required)
+
+user_id is always set from g.current_user_id on create; never trusted from request body.
+
+---
+
+## Auth
+
+JWT in header:
+
+Authorization: Bearer <token>
+
+Token payload:
+
+{ "sub": "<user.id as string>", "role": "<user.role>", "exp": <unix ts> }
+
+@require_auth:
+
+- on success: sets g.current_user_id, g.current_user_role
+- on failure: 401 {"code":"UNAUTHORIZED","message":"Missing or invalid Authorization header."}
+
+---
+
+## Routes
+
+Auth (/auth)
+
+POST /auth/register
+- Body: email, password
+- 400 {"code":"VALIDATION_ERROR"}
+- 409 {"code":"EMAIL_TAKEN"}
+- 201 {id, email, created_at}
+
+POST /auth/login
+- Body: email, password
+- 400 {"code":"VALIDATION_ERROR"}
+- 401 {"code":"INVALID_CREDENTIALS"}
+- 200 {id, email, created_at, token}
+
+---
+
+User (/users)
+
+GET /users/me
+- auth required; uses g.current_user_id
+- returns {id, email, created_at}
+
+PATCH /users/me
+- auth required
+- allowlist: email only
+
+---
+
+Orders (/orders)
+
+Health:
+
+GET /orders/health
+- auth required
+- 200 {"status":"healthy"}
+
+GET /orders/admin/health
+- auth required, g.current_user_role == "admin"
+- admin: 200 {"status":"admin healthy"}
+- non-admin: 403 {"error":"Unauthorized"}
+
+Core orders (all auth required):
+
+POST /orders/orders
+- Body: restaurant_name, total_price, reference_number
+- invalid JSON: 400 {"code":"INVALID_JSON"}
+- missing fields: 400 {"code":"VALIDATION_ERROR"}
+- sets user_id = g.current_user_id
+- 201 {"message":"Delivery order created successfully","data":{id, user_id, restaurant_name, total_price, reference_number}}
+
+GET /orders/orders
+- returns only orders where user_id == g.current_user_id
+- 200 {"data":[{id, restaurant_name, total_price, reference_number}, ...]}
+
+GET /orders/orders/<int:order_id>
+- looks up by PK, no ownership check yet
+- 200 {"data":{...}} or
+  404 {"code":"NOT_FOUND","message":"Delivery order not found"}
+
+PATCH /orders/orders/<int:order_id>
+- no ownership check yet
+- data = request.get_json(silent=True)
+  - None → 400 {"code":"INVALID_JSON","message":"Invalid JSON body"}
+- updates any of: restaurant_name, total_price, reference_number
+- not found → 404 {"code":"NOT_FOUND","message":"Delivery order not found"}
+- success → 200 {"message":"Delivery order updated successfully","data":{...}}
+
+DELETE /orders/orders/<int:order_id>
+- no ownership check yet
+- not found → 404 {"code":"NOT_FOUND","message":"Delivery order not found"}
+- success → 200 {"message":"Delivery order deleted successfully"}
+
+---
+
+## Known Gap (Intentional for Now)
+
+Any authenticated user can GET / PATCH / DELETE any DeliveryOrder by ID.
+This is a missing authorization/ownership check, not an auth bug.
+Next step (future lesson): enforce order.user_id == g.current_user_id for these endpoints.
