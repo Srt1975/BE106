@@ -1,7 +1,5 @@
-# HANDOFF
-- Try to keep around 100 lines; use more only if context is needed. Always put in the copy box to retain formatting.
-
 ## Project
+- Max HANDOFF.md length @ about 100 lines
 - Repo: `BE106/takeout_backend`
 - Python: 3.14.10  
 - Venv: `./venv` → `source venv/bin/activate`
@@ -17,9 +15,9 @@
 - Package: `takeout_backend/`
   - `__init__.py` – app factory, env loading, blueprint registration
   - `config.py` – config classes, `config_by_name`
-  - `extensions.py` – db, migrate, etc.
-  - `models.py` – `User` (with roles)
-  - `routes.py` – `orders_bp` + protected health and admin-health checks
+  - `extensions.py` – `db`, `migrate`, etc.
+  - `models.py` – `User`, `DeliveryOrder` + relationships
+  - `routes.py` – `orders_bp` (health, admin-health, delivery order create + list)
   - `auth_routes.py` – `auth_bp` (register + login)
   - `user_routes.py` – `user_bp` (`/users/me` GET + PATCH)
   - `auth_utils.py` – JWT auth decorator
@@ -32,46 +30,62 @@
 - `.env` loaded via `load_dotenv()` in `__init__.py`.
 - DB:
   - `DATABASE_URL` from env if set, else `sqlite:///example.db`
-  - Active dev DB: `instance/example.db` (confirmed via `flask db upgrade` + sqlite3)
+  - Active dev DB: `instance/example.db` (via `flask db upgrade` + sqlite3)
 - JWT:
   - `JWT_SECRET` in env → `app.config["JWT_SECRET_KEY"]`
   - `JWT_LIFETIME_SECONDS` in env (default `3600`)
 
 ## Models
 - `User` (`models.py`)
-  - `__tablename__ = "users"`
-  - `id` (int, PK)
-  - `email` (String(120), unique, not null)
-  - `password_hash` (String(128), not null)
-  - `created_at` (DateTime, default `db.func.current_timestamp()`)
-  - `role` (String(20), not null, default `"user"`; DB migration: `role VARCHAR(20) DEFAULT 'user' NOT NULL`)
+  - `id`, `email` (unique), `password_hash`, `created_at`, `role` (default `"user"`)
+  - `delivery_orders` – one-to-many to `DeliveryOrder`
+- `DeliveryOrder` (`models.py`)
+  - `id` (PK)
+  - `user_id` (FK → `users.id`, not null) — owner of the order
+  - `restaurant_name` (String(120), not null)
+  - `total_price` (Float, not null)
+  - `special_instructions` (Text, nullable)
+  - `reference_number` (String(50), unique, not null)
+  - `user` – many-to-one back to `User`
+  - `user_id` is always set from `g.current_user_id` (JWT), never trusted from request body
 
-## Auth blueprints / routes
+## Auth routes
 - `auth_bp` (`auth_routes.py`)
   - `POST /auth/register`
     - Body: `email`, `password`
-    - 400: `code: "VALIDATION_ERROR"`
-    - 409: `code: "EMAIL_TAKEN"`
+    - 400: `{"code": "VALIDATION_ERROR"}`
+    - 409: `{"code": "EMAIL_TAKEN"}`
     - 201: `id`, `email`, `created_at`
   - `POST /auth/login`
     - Body: `email`, `password`
-    - 400: `VALIDATION_ERROR`
-    - 401: `INVALID_CREDENTIALS`
+    - 400: `{"code": "VALIDATION_ERROR"}`
+    - 401: `{"code": "INVALID_CREDENTIALS"}`
     - 200: `id`, `email`, `created_at`, `token`
       - JWT payload: `{"sub": "<user.id as string>", "role": user.role, "exp": <unix ts>}`
 
-## Orders blueprint / routes
+## Orders routes
 - `orders_bp` (`routes.py`)
   - Prefix: `/orders`
   - `GET /orders/health`
-    - Protected by `@require_auth`
+    - `@require_auth`
     - 200: `{"status": "healthy"}`
   - `GET /orders/admin/health`
-    - `@require_auth` (JWT verification + sets `g.current_user_id`, `g.current_user_role`)
-    - In-view role check: requires `g.current_user_role == "admin"`
+    - `@require_auth` (sets `g.current_user_id`, `g.current_user_role`)
+    - Requires `g.current_user_role == "admin"`
     - 200 (admin): `{"status": "admin healthy"}`
     - 403 (non-admin): `{"error": "Unauthorized"}`
     - 401 (no/invalid token): from `@require_auth` (`{"code":"UNAUTHORIZED", ...}`)
+  - `POST /orders/orders`
+    - `@require_auth`
+    - JSON: `restaurant_name`, `total_price`, `reference_number` (required)
+    - 400 invalid JSON: `{"code": "INVALID_JSON"}`
+    - 400 missing fields: `{"code": "VALIDATION_ERROR"}`
+    - Creates `DeliveryOrder` with `user_id = g.current_user_id`
+    - 201: `{"message": "...", "data": {id, user_id, restaurant_name, total_price, reference_number}}`
+  - `GET /orders/orders`
+    - `@require_auth`
+    - Returns only orders where `user_id == g.current_user_id`
+    - 200: `{"data": [{id, restaurant_name, total_price, reference_number}, ...]}`
 
 ## User profile routes
 - `user_bp` (`user_routes.py`)
@@ -86,23 +100,8 @@
 
 ## Auth utilities
 - `auth_utils.py`
-  - `@require_auth` decorator:
+  - `@require_auth`:
     - Reads `Authorization: Bearer <token>`
-    - Missing/invalid header → 401:
-      - `{"code":"UNAUTHORIZED","message":"Missing or invalid Authorization header."}`
-    - Decodes JWT with `JWT_SECRET_KEY`, HS256, requires `exp`
-    - Sets `g.current_user_id = int(sub)` and `g.current_user_role` from the token’s `role` claim
-    - Invalid/expired token → 401:
-      - `{"code":"UNAUTHORIZED","message":"Invalid or expired token."}`
-
-## Verified curl behavior (dev, port 5001)
-- `GET /users/me` and `PATCH /users/me`:
-  - Work only with a valid token
-  - Always operate on the caller’s own `User`
-- `GET /orders/admin/health`:
-  - Admin token (`role: "admin"`) → 200, `{"status":"admin healthy"}`
-  - Regular user token (`role: "user"`) → 403, `{"error":"Unauthorized"}`
-  - No token → 401, `{"code":"UNAUTHORIZED","message":"Missing or invalid Authorization header."}`
-
-## Up next
-- Continue core resource design and CRUD with auth + roles enforced where needed.
+    - Verifies JWT
+    - On success sets `g.current_user_id`, `g.current_user_role`
+    - On failure returns 401 with `{"code": "UNAUTHORIZED", ...}`
