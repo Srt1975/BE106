@@ -105,3 +105,10 @@
     - Verifies JWT
     - On success sets `g.current_user_id`, `g.current_user_role`
     - On failure returns 401 with `{"code": "UNAUTHORIZED", ...}`
+
+## Current behavior notes
+
+GET /orders/orders/<id>:
+Existing ID → 200 with order data (even if owned by another user).
+Missing ID → 404 with JSON {"code": "NOT_FOUND", "message": "Delivery order not found"}.
+Ownership enforcement for read-by-ID is not yet implemented; this lesson only distinguishes “missing record” vs “existing record”

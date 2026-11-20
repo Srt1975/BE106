@@ -59,3 +59,20 @@ def get_delivery_orders():
             'reference_number': order.reference_number
         })
     return {'data': orders_list}, 200
+
+@orders_bp.get('/orders/<int:order_id>')
+@require_auth
+def get_delivery_order(order_id):
+    order = DeliveryOrder.query.get(order_id)
+    if not order:
+        return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
+    response = {
+        'id': order.id,
+        'restaurant_name': order.restaurant_name,
+        'total_price': order.total_price,
+        'reference_number': order.reference_number
+    }
+    return {'data': response}, 200
+
+
+
