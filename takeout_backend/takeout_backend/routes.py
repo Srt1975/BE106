@@ -14,7 +14,10 @@ def health_check():
 @require_auth
 def admin_health_check():
     if g.current_user_role != 'admin':
-        return {'error': 'Unauthorized'}, 403
+        return {
+            "code": "FORBIDDEN",
+            "message": "You do not have permission to access this resource."
+            }, 403
     return {'status': 'admin healthy'}
 
 @orders_bp.post('/orders')
@@ -22,7 +25,14 @@ def admin_health_check():
 def create_delivery_order():
     data = request.get_json()
     if not data:
-        return {'code': 'INVALID_JSON'}, 400
+        return {'code': 'VALIDATION_ERROR',
+                'message': 'There were validation errors',
+                'fields': {
+                    "restaurant_name": "Restaurant name is required.",
+                    "total_price": "Total price is required.",
+                    "reference_number": "Reference number is required."
+                }}, 400
+    
     restaurant_name = data.get('restaurant_name')
     total_price = data.get('total_price')
     reference_number = data.get('reference_number')
@@ -49,22 +59,54 @@ def create_delivery_order():
 @orders_bp.get('/orders')
 @require_auth
 def get_delivery_orders():
-    orders = DeliveryOrder.query.filter_by(user_id=g.current_user_id).all()
+    page = request.args.get('page', default=1, type=int)
+    per_page = request.args.get('per_page', default=4, type=int)
+    
+    if per_page is None or per_page < 1 or per_page > 15:
+        return {
+            "code": "VALIDATION_ERROR",
+            "message": "There were validation errors.",
+            "fields": {
+                "per_page": "Must be between 1 and 15."
+            }
+        }, 400
+    
+    if page is None or page < 1:
+        return {
+            "code": "VALIDATION_ERROR",
+            "message": "There were validation errors.",
+            "fields": {
+                "page": "Must be greater than 0."
+            }
+        }, 400
+
+
+    orders_query = DeliveryOrder.query.filter_by(user_id=g.current_user_id).order_by(DeliveryOrder.id)
+    paginated_orders = orders_query.paginate(page=page, per_page=per_page, error_out=False)
     orders_list = []
-    for order in orders:
+    for order in paginated_orders.items:
         orders_list.append({
             'id': order.id,
             'restaurant_name': order.restaurant_name,
             'total_price': order.total_price,
             'reference_number': order.reference_number
         })
-    return {'data': orders_list}, 200
+    response = {
+        'pages': paginated_orders.pages,
+        'data': orders_list,
+        'page': paginated_orders.page,
+        'per_page': paginated_orders.per_page,
+        'total': paginated_orders.total
+    }
+    return response, 200
 
 @orders_bp.get('/orders/<int:order_id>')
 @require_auth
 def get_delivery_order(order_id):
     order = DeliveryOrder.query.get(order_id)
     if not order:
+        return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
+    if order.user_id != g.current_user_id:
         return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
     response = {
         'id': order.id,
@@ -83,6 +125,8 @@ def update_delivery_order(order_id):
     data = request.get_json(silent=True)
     if data is None:
         return {"code": "INVALID_JSON", "message": "Invalid JSON body"}, 400
+    if order.user_id != g.current_user_id:
+        return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
     restaurant_name = data.get('restaurant_name')
     total_price = data.get('total_price')
     reference_number = data.get('reference_number')
@@ -106,6 +150,8 @@ def update_delivery_order(order_id):
 def delete_delivery_order(order_id):
     order = DeliveryOrder.query.get(order_id)
     if not order:
+        return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
+    if order.user_id != g.current_user_id:
         return {"code": "NOT_FOUND", "message": "Delivery order not found"}, 404
     db.session.delete(order)
     db.session.commit()

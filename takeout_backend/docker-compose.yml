@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://takeout_user:takeout_password@db:5432/takeout_db
+  db:
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    image: postgres:15.3-alpine
+    environment:
+      POSTGRES_USER: takeout_user
+      POSTGRES_PASSWORD: takeout_password
+      POSTGRES_DB: takeout_db
+    ports:
+      - "5432:5432"
+volumes:
+  db_data:

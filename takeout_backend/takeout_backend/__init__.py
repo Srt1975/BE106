@@ -23,7 +23,14 @@ def create_app(config_name):
 
     from .models import User
     from .routes import orders_bp
-    
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return {
+            "code": "NOT_FOUND",
+            "message": "Resource not found"
+        }, 404
+
     app.register_blueprint(orders_bp, url_prefix="/orders")
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(user_bp, url_prefix="/users")
