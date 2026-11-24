@@ -1,8 +1,12 @@
 import os
+import reprlib
 
 class BaseConfig:
     DEBUG = False
     PORT = 5001
+    raw = os.environ.get("DATABASE_URL")
+    print("RAW DATABASE_URL repr:", repr(raw))
+    DATABASE_URL = raw
     DATABASE_URL = os.environ.get("DATABASE_URL")
     SQLALCHEMY_DATABASE_URI = DATABASE_URL if DATABASE_URL else "sqlite:///temp.db"
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET", "default")
