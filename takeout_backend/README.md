@@ -91,7 +91,7 @@ The API is now available at http://localhost:5001 and uses Postgres in the db se
 
 1. Register:
 
-   - POST /auth/register with a JSON body like:
+   -POST /auth/register with a JSON body like:
      {
        "email": "compose_user@example.com",
        "password": "test1234"
